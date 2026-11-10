@@ -26,8 +26,11 @@ To work on the plugin itself, clone this repository and start Claude Code with
 
 ## Commands
 
-Inside a Claude Code session with the plugin loaded, `oxidify` is on the Bash tool's path. From a
-checkout of this repository, use `uv run python -m oxidify` instead.
+Inside a Claude Code session with the plugin loaded, `oxidify` is on the Bash tool's path and runs
+from the Bash tool with no variable to set. Its Python environment lives in `CLAUDE_PLUGIN_DATA`
+when that is set. Otherwise it lives in `plugins/data/<plugin>-<marketplace>` for a marketplace
+install, or `plugins/data/oxidify-inline` for `--plugin-dir`, under `CLAUDE_CONFIG_DIR` or
+`~/.claude`. From a checkout of this repository, use `uv run python -m oxidify` instead.
 
 ```
 oxidify start <url> <commit> <port> [--test-path <file or folder>]... [--test-requirement <package>]... [--test-command <command> ...]

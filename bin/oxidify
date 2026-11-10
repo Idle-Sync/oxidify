@@ -1,14 +1,44 @@
 #!/usr/bin/env bash
-# Runs `python -m oxidify` from the plugin's uv project. The environment lives in
-# CLAUDE_PLUGIN_DATA because the plugin root is replaced on every update.
+# Runs `python -m oxidify` from the plugin's uv project. The environment lives outside the
+# plugin root because the root is replaced on every update. See data_folder for where.
 set -euo pipefail
 
-if [ -z "${CLAUDE_PLUGIN_DATA:-}" ]; then
-	echo "oxidify: CLAUDE_PLUGIN_DATA is not set; run this inside a Claude Code session with the plugin loaded." >&2
-	exit 1
-fi
-
 plugin_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export UV_PROJECT_ENVIRONMENT="$CLAUDE_PLUGIN_DATA/venv"
+
+# Claude Code names the data folder plugins/data/<plugin>-<marketplace>, with every character
+# other than a letter, digit, underscore or dash replaced by a dash. A marketplace install
+# runs from plugins/cache/<marketplace>/<plugin>/<version>, so the name can be rebuilt.
+data_folder() {
+	if [ -n "${CLAUDE_PLUGIN_DATA:-}" ]; then
+		echo "$CLAUDE_PLUGIN_DATA"
+		return
+	fi
+
+	local plugin_folder marketplace_folder cache_folder plugins_folder
+	plugin_folder="$(dirname "$plugin_root")"
+	marketplace_folder="$(dirname "$plugin_folder")"
+	cache_folder="$(dirname "$marketplace_folder")"
+	plugins_folder="$(dirname "$cache_folder")"
+	if [ "$(basename "$cache_folder")" = cache ] && [ "$(basename "$plugins_folder")" = plugins ]; then
+		local name
+		name="$(basename "$plugin_folder")-$(basename "$marketplace_folder")"
+		echo "$plugins_folder/data/${name//[^a-zA-Z0-9_-]/-}"
+		return
+	fi
+
+	if [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
+		echo "$CLAUDE_CONFIG_DIR/plugins/data/oxidify-inline"
+		return
+	fi
+	if [ -n "${HOME:-}" ]; then
+		echo "$HOME/.claude/plugins/data/oxidify-inline"
+		return
+	fi
+	echo "oxidify: cannot find a folder for the Python environment; set CLAUDE_PLUGIN_DATA, CLAUDE_CONFIG_DIR or HOME." >&2
+	return 1
+}
+
+UV_PROJECT_ENVIRONMENT="$(data_folder)/venv"
+export UV_PROJECT_ENVIRONMENT
 
 exec uv run --project "$plugin_root" python -m oxidify "$@"
