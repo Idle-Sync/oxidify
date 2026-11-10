@@ -3,7 +3,7 @@ name = "oxidify"
 version = "0.1.0"
 description = "Claude Code plugin helpers that port a Python package to Rust behind PyO3, checked by an oracle."
 readme = "README.md"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 requires-python = ">=3.14"
 dependencies = [
     "jsonschema",
