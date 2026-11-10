@@ -1,5 +1,6 @@
 """Start a port: clone the repository at a pinned commit and record where it came from."""
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -38,10 +39,13 @@ def files_with_prefix(checkout: Path, prefixes: tuple[str, ...]) -> list[Path]:
 def url_without_credentials(repository_url: str) -> str:
     """`repository_url` with any `user:password@` removed, so no token is saved or shown."""
     parts = urlsplit(repository_url)
-    # An ssh user name such as `git@` is part of the address, not a secret.
-    if parts.scheme == "ssh" or "@" not in parts.netloc:
+    if "@" not in parts.netloc:
         return repository_url
-    host = parts.netloc.rpartition("@")[2]
+    user_information, _, host = parts.netloc.rpartition("@")
+    # An ssh user name such as `git@` is part of the address, not a secret; a password always is.
+    if parts.scheme == "ssh":
+        user_name = user_information.partition(":")[0]
+        host = f"{user_name}@{host}"
     return urlunsplit(parts._replace(netloc=host))
 
 
@@ -51,10 +55,16 @@ def clone_repository(repository_url: str, public_url: str, checkout: Path) -> No
         ["git", "clone", "--quiet", "--no-checkout", "--", repository_url, str(checkout)],
         capture_output=True,
         text=True,
+        # Fail instead of waiting for a password nobody is there to type.
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
     )
+    # git's output can echo the user name or password on its own, decoded or percent-encoded.
+    if result.returncode != 0 and public_url != repository_url:
+        raise StartFailed(
+            f"git clone of {public_url} failed (output hidden: the URL holds credentials)"
+        )
     if result.returncode != 0:
-        error = result.stderr.strip().replace(repository_url, public_url)
-        raise StartFailed(f"git clone of {public_url} failed: {error}")
+        raise StartFailed(f"git clone of {public_url} failed: {result.stderr.strip()}")
     run_git("-C", str(checkout), "remote", "set-url", "origin", public_url)
 
 

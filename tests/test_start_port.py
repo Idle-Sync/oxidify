@@ -1,11 +1,13 @@
 import shutil
+import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from conftest import run_git
 
 from oxidify import port_folder, state
-from oxidify.start_port import StartFailed, start_port
+from oxidify.start_port import StartFailed, start_port, url_without_credentials
 
 TEST_COMMAND = ["python", "-m", "pytest"]
 
@@ -218,6 +220,71 @@ def test_password_in_url_is_not_in_error_messages(
 
     assert "s3cr3t-token" not in str(unknown_commit_refusal.value)
     assert "s3cr3t-token" not in str(missing_repository_refusal.value)
+    # git's output can echo the user name or password on its own, so it is not shown at all.
+    assert "output hidden" in str(missing_repository_refusal.value)
+
+
+def test_password_in_url_is_not_in_licence_refusal(tiny_repository: Path, tmp_path: Path) -> None:
+    url = f"file://user:s3cr3t-token@localhost{tiny_repository}"
+
+    with pytest.raises(StartFailed, match="no licence file") as refusal:
+        start_port(url, head_of(tiny_repository), tmp_path / "port", ["tests"], [], TEST_COMMAND)
+
+    assert "s3cr3t-token" not in str(refusal.value)
+
+
+@pytest.mark.parametrize(
+    ("given", "saved"),
+    [
+        ("ssh://git:pa55word@example.invalid/x.git", "ssh://git@example.invalid/x.git"),
+        ("ssh://git@example.invalid/x.git", "ssh://git@example.invalid/x.git"),
+        ("https://t0ken@example.invalid/x.git", "https://example.invalid/x.git"),
+        ("https://user:p%40ss@example.invalid/x.git", "https://example.invalid/x.git"),
+        ("git@example.invalid:x.git", "git@example.invalid:x.git"),
+        ("/local/path/x", "/local/path/x"),
+    ],
+)
+def test_url_without_credentials(given: str, saved: str) -> None:
+    assert url_without_credentials(given) == saved
+
+
+def test_clone_never_prompts_for_credentials(
+    licensed_repository: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone_environments: list[dict[str, str]] = []
+    real_run = subprocess.run
+
+    def recording_run(arguments: list[str], **options: Any) -> subprocess.CompletedProcess[str]:
+        if arguments[1] == "clone":
+            clone_environments.append(options["env"])
+        return real_run(arguments, **options)
+
+    monkeypatch.setattr("oxidify.start_port.subprocess.run", recording_run)
+
+    start(licensed_repository, tmp_path / "port")
+
+    assert len(clone_environments) == 1
+    assert clone_environments[0]["GIT_TERMINAL_PROMPT"] == "0"
+
+
+def test_failed_late_start_empties_existing_folder(
+    licensed_repository: Path, tmp_path: Path
+) -> None:
+    port = tmp_path / "port"
+    port.mkdir()
+
+    # Calling the only package a test folder fails after CREDITS.md is written.
+    with pytest.raises(StartFailed, match="no top-level package"):
+        start_port(
+            str(licensed_repository),
+            head_of(licensed_repository),
+            port,
+            ["tiny_package"],
+            ["pytest"],
+            TEST_COMMAND,
+        )
+
+    assert list(port.iterdir()) == []
 
 
 def test_url_starting_with_dash_is_not_read_as_an_option(tmp_path: Path) -> None:
