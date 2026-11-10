@@ -2,10 +2,10 @@ import shutil
 from pathlib import Path
 
 import pytest
+from conftest import run_git
 
 from oxidify import port_folder, state
 from oxidify.start_port import StartFailed, start_port
-from conftest import run_git
 
 TEST_COMMAND = ["python", "-m", "pytest"]
 
