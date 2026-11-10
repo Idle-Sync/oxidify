@@ -10,6 +10,12 @@ from oxidify.start_port import StartFailed, start_port
 TEST_COMMAND = ["python", "-m", "pytest"]
 
 
+def commit_symlink(repository: Path, name: str, target: Path) -> None:
+    (repository / name).symlink_to(target)
+    run_git("-C", str(repository), "add", name)
+    run_git("-C", str(repository), "commit", "--quiet", "-m", f"link {name}")
+
+
 def commit_file(repository: Path, name: str, content: bytes, message: str) -> str:
     (repository / name).write_bytes(content)
     run_git("-C", str(repository), "add", name)
@@ -63,6 +69,7 @@ def test_checkout_is_at_pinned_commit(licensed_repository: Path, tmp_path: Path)
 
 def test_licence_and_credits_copied(licensed_repository: Path, tmp_path: Path) -> None:
     commit_file(licensed_repository, "LICENCE-extra", b"\x00\xffbinary\n", "extra licence")
+    commit_file(licensed_repository, "copying.md", b"lowercase licence\n", "lowercase licence")
     run_git(
         "-C",
         str(licensed_repository),
@@ -80,13 +87,13 @@ def test_licence_and_credits_copied(licensed_repository: Path, tmp_path: Path) -
 
     start(licensed_repository, port)
 
-    for name in ["LICENSE", "LICENCE-extra", "NOTICE.txt", "AUTHORS.rst"]:
+    for name in ["LICENSE", "LICENCE-extra", "NOTICE.txt", "AUTHORS.rst", "copying.md"]:
         original = (licensed_repository / name).read_bytes()
         assert (port_folder.licence_folder(port) / name).read_bytes() == original
     credits = port_folder.credits_path(port).read_text()
     assert str(licensed_repository) in credits
     assert head_of(licensed_repository) in credits
-    for name in ["LICENSE", "LICENCE-extra", "NOTICE.txt"]:
+    for name in ["LICENSE", "LICENCE-extra", "NOTICE.txt", "copying.md"]:
         assert name in credits
     assert "Oxidify Tests" in credits
     assert "Grace Hopper" in credits
@@ -135,6 +142,7 @@ def test_failed_start_removes_created_folder(tiny_repository: Path, tmp_path: Pa
         start(tiny_repository, port)
 
     assert not port.exists()
+    assert not (tmp_path / "new").exists()
 
 
 def test_failed_start_keeps_existing_folder(tiny_repository: Path, tmp_path: Path) -> None:
@@ -158,3 +166,94 @@ def test_retry_after_failure_succeeds(tiny_repository: Path, tmp_path: Path) -> 
     start(tiny_repository, port)
 
     assert port_folder.port_json_path(port).is_file()
+
+
+def test_symlinked_licence_file_is_not_copied(licensed_repository: Path, tmp_path: Path) -> None:
+    outside = tmp_path / "outside.txt"
+    outside.write_text("private file outside the repository\n")
+    commit_symlink(licensed_repository, "COPYING", outside)
+    port = tmp_path / "port"
+
+    start(licensed_repository, port)
+
+    assert not (port_folder.licence_folder(port) / "COPYING").exists()
+    assert "COPYING" not in port_folder.credits_path(port).read_text()
+
+
+def test_refuses_checkout_whose_only_licence_is_a_symlink(
+    tiny_repository: Path, tmp_path: Path
+) -> None:
+    outside = tmp_path / "outside.txt"
+    outside.write_text("private file outside the repository\n")
+    commit_symlink(tiny_repository, "LICENSE", outside)
+
+    with pytest.raises(StartFailed, match="no licence file"):
+        start(tiny_repository, tmp_path / "port")
+
+
+def test_password_in_url_is_not_saved(licensed_repository: Path, tmp_path: Path) -> None:
+    url = f"file://user:s3cr3t-token@localhost{licensed_repository}"
+    port = tmp_path / "port"
+
+    start_port(url, head_of(licensed_repository), port, ["tests"], ["pytest"], TEST_COMMAND)
+
+    saved = state.read_state(port_folder.port_json_path(port), "port")
+    assert saved["source_url"] == f"file://localhost{licensed_repository}"
+    for path in port.rglob("*"):
+        if path.is_file():
+            assert b"s3cr3t-token" not in path.read_bytes(), path
+
+
+def test_password_in_url_is_not_in_error_messages(
+    licensed_repository: Path, tmp_path: Path
+) -> None:
+    good_url = f"file://user:s3cr3t-token@localhost{licensed_repository}"
+    missing_url = f"file://user:s3cr3t-token@localhost{tmp_path / 'missing'}"
+    unknown_commit = "0123456789abcdef0123456789abcdef01234567"
+
+    with pytest.raises(StartFailed) as unknown_commit_refusal:
+        start_port(good_url, unknown_commit, tmp_path / "a", ["tests"], ["pytest"], TEST_COMMAND)
+    with pytest.raises(StartFailed) as missing_repository_refusal:
+        start_port(missing_url, unknown_commit, tmp_path / "b", ["tests"], [], TEST_COMMAND)
+
+    assert "s3cr3t-token" not in str(unknown_commit_refusal.value)
+    assert "s3cr3t-token" not in str(missing_repository_refusal.value)
+
+
+def test_url_starting_with_dash_is_not_read_as_an_option(tmp_path: Path) -> None:
+    port = tmp_path / "port"
+
+    with pytest.raises(StartFailed, match="repository '--bare' does not exist"):
+        start_port("--bare", "HEAD", port, ["tests"], ["pytest"], TEST_COMMAND)
+
+    assert not port.exists()
+
+
+def test_interrupted_start_removes_created_folder(
+    licensed_repository: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def interrupt(checkout: Path) -> list[str]:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("oxidify.start_port.contributors_at", interrupt)
+    port = tmp_path / "port"
+
+    with pytest.raises(KeyboardInterrupt):
+        start(licensed_repository, port)
+
+    assert not port.exists()
+
+
+def test_failed_cleanup_keeps_the_original_cause(
+    tiny_repository: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refuse_removal(path: Path) -> None:
+        raise PermissionError(f"cannot remove {path}")
+
+    monkeypatch.setattr("oxidify.start_port.shutil.rmtree", refuse_removal)
+
+    with pytest.raises(StartFailed) as refusal:
+        start(tiny_repository, tmp_path / "port")
+
+    assert "no licence file" in str(refusal.value)
+    assert "cannot remove" in str(refusal.value)
