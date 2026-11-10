@@ -15,7 +15,7 @@ repos:
         name: shellcheck
         entry: shellcheck
         language: system
-        files: ^(hooks/.*\.sh|bin/.*)$
+        files: ^(hooks/.*\.sh|bin/.*|tests/shell/.*\.bats)$
       - id: shfmt
         name: shfmt
         entry: shfmt -d

@@ -1,5 +1,6 @@
 {
   "name": "oxidify",
+  "version": "0.1.0",
   "description": "Ports Python libraries to Rust-backed packages and checks the result against the original tests.",
   "author": {
     "name": "Sayantan Ghosh",
