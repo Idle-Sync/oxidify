@@ -65,8 +65,10 @@ and returns one entry per call path in the `differential` shape of
 
 ### `names_resolving_to_source_language(port_folder) -> list[str]`
 
-Returns the dotted public names the coverage map marks `rust` whose Rust-backed object is still
-source-language code.
+Returns every dotted public name of the coverage map that the extension module does not provide,
+whatever the coverage map marks it. The oracle sorts those names: a name marked `rust` goes to
+`rust_names_resolving_to_python` and fails the port; a name marked `python` goes to `left_in_python`
+with its reason, and fails the port only when the reason is empty.
 
 ## Changing the interface
 
