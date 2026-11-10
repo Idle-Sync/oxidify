@@ -135,6 +135,14 @@ def test_missing_format_version_is_invalid(tmp_path: Path) -> None:
         state.read_state(path, "checkpoints")
 
 
+def test_file_that_is_not_json_is_invalid(tmp_path: Path) -> None:
+    path = tmp_path / "port.json"
+    path.write_text("{ not json")
+
+    with pytest.raises(InvalidState, match="not valid JSON"):
+        state.read_state(path, "port")
+
+
 def test_write_state_validates_before_writing(tmp_path: Path) -> None:
     data = example_port()
     data["commit"] = "not-a-hash"
