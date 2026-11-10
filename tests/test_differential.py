@@ -194,19 +194,22 @@ def test_name_missing_from_rust_backed_is_a_mismatch(load_fixture_module) -> Non
 
     [result] = compare_modules(original, rust_backed, ["missing_from_rust_backed"], 5)
 
-    assert result["inputs_tried"] == 0
-    assert result["skipped_reason"] is None
-    assert result["mismatches"] == [
-        {
-            "shrunk_input": "",
-            "original": "uncomparable_original.missing_from_rust_backed",
-            "rust_backed": repr(
-                AttributeError(
-                    "module 'uncomparable_rust_backed' has no attribute 'missing_from_rust_backed'"
-                )
-            ),
-        }
-    ]
+    missing = AttributeError(
+        "module 'uncomparable_rust_backed' has no attribute 'missing_from_rust_backed'"
+    )
+    assert result == {
+        "call_path": "uncomparable_original.missing_from_rust_backed",
+        "inputs_tried": 0,
+        "skipped_reason": None,
+        "rust_backed_is_builtin": False,
+        "mismatches": [
+            {
+                "shrunk_input": "",
+                "original": "uncomparable_original.missing_from_rust_backed",
+                "rust_backed": repr(missing),
+            }
+        ],
+    }
 
 
 @pytest.mark.parametrize(
