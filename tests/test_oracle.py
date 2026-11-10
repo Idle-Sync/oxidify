@@ -131,13 +131,24 @@ def test_counts_not_adding_up_to_the_collected_ids_fail_the_oracle(port: Path) -
 
 def test_more_skipped_than_the_original_fails_the_oracle(port: Path) -> None:
     adapter = FakeAdapter()
-    adapter.test_results["rust_backed"]["passed"] = 0
-    adapter.test_results["rust_backed"]["skipped"] = 2
+    adapter.test_results["rust_backed"]["passed"] = 1
+    adapter.test_results["rust_backed"]["skipped"] = 1
 
     report = run_oracle(port, adapter, examples_per_call_path=100)
 
-    assert report["original_tests"]["skipped"] == 2
+    assert report["original_tests"]["skipped"] == 1
     assert report["passed"] is False
+
+
+def test_skips_the_original_also_skips_pass(port: Path) -> None:
+    adapter = FakeAdapter()
+    for against in ["original", "rust_backed"]:
+        adapter.test_results[against]["passed"] = 1
+        adapter.test_results[against]["skipped"] = 1
+
+    report = run_oracle(port, adapter, examples_per_call_path=100)
+
+    assert report["passed"] is True
 
 
 def test_lost_test_id_fails_the_oracle(port: Path) -> None:
