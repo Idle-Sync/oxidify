@@ -1,0 +1,15 @@
+[package]
+name = "inflection_rs"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+name = "_rust"
+crate-type = ["cdylib", "rlib"]
+# The docstring of `dasherize` is the original Python one; its example is a Python doctest.
+doctest = false
+
+[dependencies]
+pyo3 = "0.30"

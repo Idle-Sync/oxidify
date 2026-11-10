@@ -1,0 +1,15 @@
+[build-system]
+requires = ["maturin>=1.16,<2"]
+build-backend = "maturin"
+
+[project]
+name = "inflection_rs"
+version = "0.1.0"
+description = "inflection with dasherize implemented in Rust behind PyO3."
+license = "MIT"
+requires-python = ">=3.14"
+
+[tool.maturin]
+module-name = "inflection_rs._rust"
+python-source = "python"
+features = ["pyo3/extension-module"]
