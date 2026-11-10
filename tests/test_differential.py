@@ -83,13 +83,21 @@ def test_matching_modules_report_inputs_tried(load_fixture_module) -> None:
 
 
 def test_mismatch_is_shrunk(load_fixture_module) -> None:
-    original = load_fixture_module("underscore_original")
-    rust_backed = load_fixture_module("underscore_rust_backed")
+    original = load_fixture_module("shout_original")
+    rust_backed = load_fixture_module("shout_rust_backed")
 
     [result] = compare_modules(original, rust_backed, ["shout"], EXAMPLES_PER_CALL_PATH)
 
+    # The fixtures differ on every non-empty text, so the search finds a mismatch on its
+    # first example and shrinks it to the smallest text; the second entry is the
+    # lone-surrogate run that every str parameter gets.
     assert result["mismatches"] == [
-        {"shrunk_input": repr("_"), "original": repr("_"), "rust_backed": repr("_!")}
+        {"shrunk_input": repr("0"), "original": repr("0"), "rust_backed": repr("0!")},
+        {
+            "shrunk_input": repr("\ud800"),
+            "original": repr("\ud800"),
+            "rust_backed": repr("\ud800!"),
+        },
     ]
 
 
@@ -121,8 +129,8 @@ def test_runs_are_derandomised(hypothesis_storage: Path) -> None:
 
 
 def test_no_example_database_is_written(load_fixture_module, hypothesis_storage: Path) -> None:
-    original = load_fixture_module("underscore_original")
-    rust_backed = load_fixture_module("underscore_rust_backed")
+    original = load_fixture_module("shout_original")
+    rust_backed = load_fixture_module("shout_rust_backed")
 
     compare_modules(original, rust_backed, ["shout"], EXAMPLES_PER_CALL_PATH)
 

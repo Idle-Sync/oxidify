@@ -1,4 +1,4 @@
 def shout(text: str) -> str:
-    if "_" in text:
+    if text:
         return text.upper() + "!"
     return text.upper()
