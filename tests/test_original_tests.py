@@ -1,5 +1,7 @@
+import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,9 +10,11 @@ from oxidify import port_folder, state
 from oxidify.python_adapter.bridge import build_bridge
 from oxidify.python_adapter.fallback_check import names_resolving_to_source_language
 from oxidify.python_adapter.original_tests import (
+    OriginalTestsFailedToRun,
     counts_from_junit_xml,
     ids_from_collect_output,
     run_original_tests,
+    run_pytest,
 )
 
 HAND_SWAP_PROJECT = Path(__file__).parents[1] / "examples" / "inflection_hand_swap"
@@ -85,6 +89,10 @@ def test_collected_ids_use_original_import_name() -> None:
         "test_inflection.py::test_dasherize[inflection_rs_word-inflection_rs-word]\n"
         "test_inflection.py::test_inflection_rs_helper\n"
         "\n"
+        "=============================== warnings summary ===============================\n"
+        "test_inflection.py::test_inflection_rs_helper\n"
+        "  DeprecationWarning: old\n"
+        "\n"
         "4 tests collected in 0.05s\n"
     )
 
@@ -100,6 +108,13 @@ def test_collected_ids_use_original_import_name() -> None:
 
 def test_collect_output_without_ids_gives_no_ids() -> None:
     assert ids_from_collect_output("no tests collected in 0.01s\n", ["inflection"]) == []
+
+
+def test_usage_error_raises(tmp_path: Path) -> None:
+    arguments = [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "--no-such-option"]
+
+    with pytest.raises(OriginalTestsFailedToRun, match="exited 4"):
+        run_pytest(arguments, tmp_path, dict(os.environ))
 
 
 @pytest.mark.end_to_end

@@ -1,4 +1,5 @@
 import json
+import subprocess
 from pathlib import Path
 from typing import Any, Literal
 
@@ -144,6 +145,34 @@ def test_changed_checkout_fails_the_oracle(port: Path, change: str) -> None:
     assert report["passed"] is False
 
 
+def test_checkout_at_another_commit_fails_the_oracle(port: Path) -> None:
+    checkout = str(port_folder.checkout_folder(port))
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Oxidify Tests",
+            "-c",
+            "user.email=tests@oxidify.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-C",
+            checkout,
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "-m",
+            "moved",
+        ],
+        check=True,
+    )
+
+    report = run_oracle(port, FakeAdapter(), examples_per_call_path=100)
+
+    assert report["original_tests"]["test_folder_diff_empty"] is False
+    assert report["passed"] is False
+
+
 def test_mismatch_fails_the_oracle(port: Path) -> None:
     adapter = FakeAdapter()
     adapter.differential[0]["mismatches"] = [
@@ -179,3 +208,11 @@ def test_python_name_without_reason_fails_the_oracle(port: Path) -> None:
         {"name": "tiny_package.count_words", "reason": ""}
     ]
     assert report["passed"] is False
+
+
+def test_name_the_coverage_map_does_not_hold_is_refused(port: Path) -> None:
+    adapter = FakeAdapter()
+    adapter.python_names = ["tiny_package.not_public"]
+
+    with pytest.raises(ValueError, match="tiny_package.not_public"):
+        run_oracle(port, adapter, examples_per_call_path=100)
