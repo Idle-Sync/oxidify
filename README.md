@@ -30,7 +30,7 @@ Inside a Claude Code session with the plugin loaded, `oxidify` is on the Bash to
 checkout of this repository, use `uv run python -m oxidify` instead.
 
 ```
-oxidify start <url> <commit> <port> [--test-path <file or folder>]... [--test-requirement <package>]...
+oxidify start <url> <commit> <port> [--test-path <file or folder>]... [--test-requirement <package>]... [--test-command <command> ...]
 oxidify analyse <port>
 oxidify mark-swapped <port> <module> <name> [<name> ...]
 oxidify build <port> [--rust-project <folder>]
@@ -38,7 +38,7 @@ oxidify oracle <port> [--examples <inputs per call path>]
 ```
 
 - `start` clones the repository at the commit into `<port>/checkout/`, copies the licence files and
-  builds the port's environment in `<port>/.venv/`. `--test-path` defaults to `tests`. A port
+  builds the port's environment in `<port>/.venv/`. `--test-path` defaults to `tests`; `--test-command` defaults to `python -m pytest`. A port
   folder that already holds files is refused and left as it is.
 - `analyse` writes the files under `<port>/analysis/` and the coverage map.
 - `mark-swapped` marks public names of one module as implemented in Rust.
