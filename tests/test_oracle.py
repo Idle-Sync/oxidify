@@ -116,6 +116,27 @@ def test_failing_test_fails_the_oracle(port: Path, outcome: str) -> None:
     report = run_oracle(port, adapter, examples_per_call_path=100)
 
     assert report["original_tests"][outcome] == 1
+    assert report["original_tests"]["passed"] == 1
+    assert report["passed"] is False
+
+
+def test_counts_not_adding_up_to_the_collected_ids_fail_the_oracle(port: Path) -> None:
+    adapter = FakeAdapter()
+    adapter.test_results["rust_backed"]["passed"] = 1
+
+    report = run_oracle(port, adapter, examples_per_call_path=100)
+
+    assert report["passed"] is False
+
+
+def test_more_skipped_than_the_original_fails_the_oracle(port: Path) -> None:
+    adapter = FakeAdapter()
+    adapter.test_results["rust_backed"]["passed"] = 0
+    adapter.test_results["rust_backed"]["skipped"] = 2
+
+    report = run_oracle(port, adapter, examples_per_call_path=100)
+
+    assert report["original_tests"]["skipped"] == 2
     assert report["passed"] is False
 
 
@@ -130,14 +151,20 @@ def test_lost_test_id_fails_the_oracle(port: Path) -> None:
     assert report["passed"] is False
 
 
-@pytest.mark.parametrize("change", ["tracked file edited", "untracked file added"])
+@pytest.mark.parametrize(
+    "change", ["tracked file edited", "untracked file added", "ignored file added"]
+)
 def test_changed_checkout_fails_the_oracle(port: Path, change: str) -> None:
     checkout = port_folder.checkout_folder(port)
     if change == "tracked file edited":
         test_file = checkout / "tests" / "test_tiny_package.py"
         test_file.write_text(test_file.read_text() + "\n# edited\n")
-    else:
+    elif change == "untracked file added":
         (checkout / "tests" / "test_extra.py").write_text("def test_extra():\n    pass\n")
+    else:
+        # A file the checkout ignores can still change the run, as a conftest.py or .pth can.
+        (checkout / ".git" / "info" / "exclude").write_text("conftest.py\n")
+        (checkout / "conftest.py").write_text("collect_ignore = ['tests']\n")
 
     report = run_oracle(port, FakeAdapter(), examples_per_call_path=100)
 

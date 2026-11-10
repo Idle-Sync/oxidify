@@ -14,7 +14,10 @@ from oxidify.state import FORMAT_VERSION, read_state, write_state
 
 
 def checkout_matches_pinned_commit(port_folder: Path, commit: str) -> bool:
-    """True when the checkout is at `commit` with no tracked change and no untracked file."""
+    """True when the checkout is at `commit` with no tracked change and no new file.
+
+    Ignored files count too: a conftest.py or .pth under an ignored path still changes the run.
+    """
     checkout = str(paths.checkout_folder(port_folder))
     head = subprocess.run(
         ["git", "-C", checkout, "rev-parse", "HEAD"], capture_output=True, text=True, check=True
@@ -22,7 +25,7 @@ def checkout_matches_pinned_commit(port_folder: Path, commit: str) -> bool:
     if head.stdout.strip() != commit:
         return False
     status = subprocess.run(
-        ["git", "-C", checkout, "status", "--porcelain", "--untracked-files=all"],
+        ["git", "-C", checkout, "status", "--porcelain", "--untracked-files=all", "--ignored"],
         capture_output=True,
         text=True,
         check=True,
@@ -65,11 +68,9 @@ def fallback_report(
 
 
 def original_tests_report(
-    port_folder: Path, adapter: SourceLanguageAdapter, commit: str
+    original: dict[str, Any], rust_backed: dict[str, Any], checkout_unchanged: bool
 ) -> dict[str, Any]:
     """Counts of the Rust-backed run, the ids it lost and whether the checkout is unchanged."""
-    original = adapter.run_original_tests(port_folder, "original")
-    rust_backed = adapter.run_original_tests(port_folder, "rust_backed")
     rust_backed_ids = set(rust_backed["collected_test_ids"])
     missing_test_ids = []
     for test_id in original["collected_test_ids"]:
@@ -80,9 +81,28 @@ def original_tests_report(
         "failed": rust_backed["failed"],
         "errors": rust_backed["errors"],
         "skipped": rust_backed["skipped"],
-        "test_folder_diff_empty": checkout_matches_pinned_commit(port_folder, commit),
+        "test_folder_diff_empty": checkout_unchanged,
         "missing_test_ids": missing_test_ids,
     }
+
+
+def original_tests_passed(
+    original: dict[str, Any], rust_backed: dict[str, Any], report: dict[str, Any]
+) -> bool:
+    """True when every collected Rust-backed test ran and none failed, errored or was lost.
+
+    Outcomes that do not add up to the collected ids mean tests did not run (a collection error
+    or an interrupted run); skipping more than the original hides tests as surely as losing them.
+    """
+    outcomes = report["passed"] + report["failed"] + report["errors"] + report["skipped"]
+    return (
+        report["failed"] == 0
+        and report["errors"] == 0
+        and outcomes == len(rust_backed["collected_test_ids"])
+        and report["skipped"] <= original["skipped"]
+        and report["test_folder_diff_empty"]
+        and not report["missing_test_ids"]
+    )
 
 
 def run_oracle(
@@ -90,30 +110,32 @@ def run_oracle(
 ) -> dict[str, Any]:
     """Run every oracle check, write `report/oracle.json` and return the report."""
     port = read_state(paths.port_json_path(port_folder), "port")
-    original_tests = original_tests_report(port_folder, adapter, port["commit"])
+    original = adapter.run_original_tests(port_folder, "original")
+    rust_backed = adapter.run_original_tests(port_folder, "rust_backed")
+    checkout_unchanged = checkout_matches_pinned_commit(port_folder, port["commit"])
+    original_tests = original_tests_report(original, rust_backed, checkout_unchanged)
     differential = adapter.run_differential(port_folder, examples_per_call_path)
     coverage_map = read_state(paths.coverage_map_path(port_folder), "coverage_map")
     fallback = fallback_report(
         coverage_map, adapter.names_resolving_to_source_language(port_folder)
     )
 
-    original_tests_passed = (
-        original_tests["failed"] == 0
-        and original_tests["errors"] == 0
-        and original_tests["test_folder_diff_empty"]
-        and not original_tests["missing_test_ids"]
-    )
     differential_passed = all(not entry["mismatches"] for entry in differential)
     fallback_passed = (
         not fallback["rust_names_resolving_to_python"]
         and not fallback["python_names_without_reason"]
+    )
+    passed = (
+        original_tests_passed(original, rust_backed, original_tests)
+        and differential_passed
+        and fallback_passed
     )
     report = {
         "format_version": FORMAT_VERSION,
         "original_tests": original_tests,
         "differential": differential,
         "fallback": fallback,
-        "passed": original_tests_passed and differential_passed and fallback_passed,
+        "passed": passed,
     }
     write_state(paths.oracle_report_path(port_folder), "oracle_report", report)
     return report
