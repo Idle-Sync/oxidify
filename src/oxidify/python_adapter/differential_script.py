@@ -195,7 +195,6 @@ def compare_call_path(
             result["mismatches"].append(mismatch)
         if skipped_reason is not None:
             result["skipped_reason"] = skipped_reason
-            return result
     return result
 
 

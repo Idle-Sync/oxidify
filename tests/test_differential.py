@@ -142,6 +142,36 @@ def test_nan_results_agree(load_fixture_module) -> None:
         assert result["mismatches"] == []
 
 
+def test_nan_and_a_number_differ(load_fixture_module) -> None:
+    original = load_fixture_module("floats_original")
+    rust_backed = load_fixture_module("floats_rust_backed")
+
+    [result] = compare_modules(original, rust_backed, ["not_a_number"], EXAMPLES_PER_CALL_PATH)
+
+    assert result["mismatches"] == [
+        {"shrunk_input": "0.0", "original": "nan", "rust_backed": "0.0"}
+    ]
+
+
+def test_containers_compared_item_by_item(load_fixture_module) -> None:
+    original = load_fixture_module("containers_original")
+    rust_backed = load_fixture_module("containers_rust_backed")
+    public_names = ["as_list", "as_pair", "as_dict", "as_float_list"]
+
+    results = compare_modules(original, rust_backed, public_names, EXAMPLES_PER_CALL_PATH)
+
+    shrunk_inputs = {}
+    for result in results:
+        for mismatch in result["mismatches"]:
+            shrunk_inputs[result["call_path"]] = mismatch["shrunk_input"]
+    assert shrunk_inputs == {
+        "containers_original.as_list": "0",
+        "containers_original.as_pair": "0",
+        "containers_original.as_dict": "0",
+        "containers_original.as_float_list": "0",
+    }
+
+
 def test_objects_without_eq_compared_by_attributes(load_fixture_module) -> None:
     original = load_fixture_module("points_original")
     rust_backed = load_fixture_module("points_rust_backed")
@@ -181,6 +211,8 @@ def test_call_paths_that_cannot_be_compared_are_listed(load_fixture_module) -> N
     assert reasons["use_rejected"].startswith("Hypothesis could not run it: FailedHealthCheck: ")
     assert reasons["first_call_differs"].startswith("Hypothesis could not run it: Flaky")
     assert reasons["double"] is None
+    for name in ["use_handle", "use_rejected", "first_call_differs"]:
+        assert "\n" not in reasons[name]
     assert by_call_path["uncomparable_original.double"]["inputs_tried"] >= EXAMPLES_PER_CALL_PATH
     for name in ["use_handle", "scale", "largest"]:
         assert by_call_path[f"uncomparable_original.{name}"]["inputs_tried"] == 0
