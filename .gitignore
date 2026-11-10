@@ -5,3 +5,7 @@ target/
 dist/
 *.so
 .env
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.coverage

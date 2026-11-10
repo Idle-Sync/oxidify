@@ -1,0 +1,5 @@
+# Tools every port environment gets, pinned to the versions in uv.lock.
+coverage==7.17.2
+grimp==3.19
+hypothesis==6.170.15
+pytest==9.2.0

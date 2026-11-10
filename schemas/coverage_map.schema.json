@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Coverage map",
+  "description": "<port>/state/coverage_map.json: for every module of the original, whether each public name is implemented in Python or in Rust.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format_version", "modules"],
+  "properties": {
+    "format_version": {
+      "description": "Version of this file's format. Readers refuse any value other than 1.",
+      "const": 1
+    },
+    "modules": {
+      "description": "One entry per module, keyed by its dotted import name.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/module" }
+    }
+  },
+  "$defs": {
+    "module": {
+      "description": "Port state of one module.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "coverage_percent", "public_names"],
+      "properties": {
+        "status": {
+          "description": "Where the module is in the port. Every module is \"python\" until module status transitions exist.",
+          "enum": ["python", "swapped", "matching"]
+        },
+        "coverage_percent": {
+          "description": "Line coverage of the module by the original tests, measured on the original; null until analysis has measured it.",
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "public_names": {
+          "description": "One entry per public name of the module.",
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/public_name" }
+        }
+      }
+    },
+    "public_name": {
+      "description": "Implementation of one public name. A Python name carries a string reason (an empty reason fails the oracle); a Rust name carries null.",
+      "oneOf": [
+        {
+          "description": "The name still runs the original Python code.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["implementation", "reason"],
+          "properties": {
+            "implementation": {
+              "description": "The name is implemented in Python.",
+              "const": "python"
+            },
+            "reason": {
+              "description": "Why the name is left in Python; empty until someone records one.",
+              "type": "string"
+            }
+          }
+        },
+        {
+          "description": "The name is backed by the Rust build.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["implementation", "reason"],
+          "properties": {
+            "implementation": {
+              "description": "The name is implemented in Rust.",
+              "const": "rust"
+            },
+            "reason": {
+              "description": "Always null: a swapped name needs no reason.",
+              "type": "null"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

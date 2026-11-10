@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Oracle report",
+  "description": "<port>/report/oracle.json: whether the Rust-backed package behaves like the original. `passed` is true only when every part below passed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format_version", "original_tests", "differential", "fallback", "passed"],
+  "properties": {
+    "format_version": {
+      "description": "Version of this file's format. Readers refuse any value other than 1.",
+      "const": 1
+    },
+    "original_tests": {
+      "description": "The original's unchanged tests run against the Rust-backed package.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed",
+        "failed",
+        "errors",
+        "skipped",
+        "test_folder_diff_empty",
+        "missing_test_ids"
+      ],
+      "properties": {
+        "passed": {
+          "description": "Tests that passed against the Rust-backed package.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "description": "Tests that failed against the Rust-backed package.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "errors": {
+          "description": "Tests that errored against the Rust-backed package.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "skipped": {
+          "description": "Tests skipped against the Rust-backed package.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "test_folder_diff_empty": {
+          "description": "True when `git diff` of the test paths against the pinned commit is empty.",
+          "type": "boolean"
+        },
+        "missing_test_ids": {
+          "description": "Test ids collected against the original but not against the Rust-backed package; any entry fails the oracle.",
+          "type": "array",
+          "items": {
+            "description": "One test id, written with the original import name.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "differential": {
+      "description": "One entry per public call path compared on generated inputs.",
+      "type": "array",
+      "items": {
+        "description": "Comparison of one call path.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "call_path",
+          "inputs_tried",
+          "skipped_reason",
+          "rust_backed_is_builtin",
+          "mismatches"
+        ],
+        "properties": {
+          "call_path": {
+            "description": "Dotted path of the public callable, such as \"inflection.dasherize\".",
+            "type": "string",
+            "minLength": 1
+          },
+          "inputs_tried": {
+            "description": "Generated inputs the call path was run on.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "skipped_reason": {
+            "description": "Why the call path was not compared; null when it was.",
+            "type": ["string", "null"]
+          },
+          "rust_backed_is_builtin": {
+            "description": "True when the Rust-backed call path resolves to compiled code rather than a Python function.",
+            "type": "boolean"
+          },
+          "mismatches": {
+            "description": "Inputs on which the two sides differed; any entry fails the oracle.",
+            "type": "array",
+            "items": {
+              "description": "One differing input after shrinking.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["shrunk_input", "original", "rust_backed"],
+              "properties": {
+                "shrunk_input": {
+                  "description": "repr() of the shrunk arguments.",
+                  "type": "string"
+                },
+                "original": {
+                  "description": "repr() of the original's return value or raised exception.",
+                  "type": "string"
+                },
+                "rust_backed": {
+                  "description": "repr() of the Rust-backed return value or raised exception.",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "fallback": {
+      "description": "No-fallback check: every name marked Rust resolves to Rust, and every name left in Python says why.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rust_names_resolving_to_python",
+        "python_names_without_reason",
+        "left_in_python"
+      ],
+      "properties": {
+        "rust_names_resolving_to_python": {
+          "description": "Names the coverage map marks Rust that resolve to Python code; any entry fails the oracle.",
+          "type": "array",
+          "items": {
+            "description": "One dotted public name.",
+            "type": "string"
+          }
+        },
+        "python_names_without_reason": {
+          "description": "Names left in Python with an empty reason; any entry fails the oracle.",
+          "type": "array",
+          "items": {
+            "description": "One dotted public name.",
+            "type": "string"
+          }
+        },
+        "left_in_python": {
+          "description": "Names left in Python, with the recorded reason.",
+          "type": "array",
+          "items": {
+            "description": "One name left in Python.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "reason"],
+            "properties": {
+              "name": {
+                "description": "Dotted public name.",
+                "type": "string"
+              },
+              "reason": {
+                "description": "Why the name is left in Python.",
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "passed": {
+      "description": "True only when the original tests, the differential runs and the no-fallback check all passed.",
+      "type": "boolean"
+    }
+  }
+}

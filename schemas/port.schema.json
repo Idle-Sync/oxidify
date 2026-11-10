@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Port",
+  "description": "<port>/port.json: what is being ported, from which commit, and how its tests run. Written once by `start`; read by every later step.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "source_url",
+    "commit",
+    "adapter",
+    "test_command",
+    "test_paths",
+    "test_requirements",
+    "import_names"
+  ],
+  "properties": {
+    "format_version": {
+      "description": "Version of this file's format. Readers refuse any value other than 1.",
+      "const": 1
+    },
+    "source_url": {
+      "description": "Git URL or local path the checkout was cloned from.",
+      "type": "string",
+      "minLength": 1
+    },
+    "commit": {
+      "description": "Full 40-character hash of the pinned commit. `checkout/` is detached at it and `original_source/` is exported from it.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "adapter": {
+      "description": "Source-language adapter that runs every language-specific step of this port.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "interface_version"],
+      "properties": {
+        "name": {
+          "description": "Registry name passed to `load_adapter`, such as \"python\".",
+          "type": "string",
+          "minLength": 1
+        },
+        "interface_version": {
+          "description": "Adapter interface version the port was started with; see reference/adapter-interface.md.",
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "test_command": {
+      "description": "Command that runs the original tests, one argument per item, run from `checkout/` with the port environment's interpreter in place of `python`.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "description": "One command-line argument.",
+        "type": "string"
+      }
+    },
+    "test_paths": {
+      "description": "Test files and folders, relative to `checkout/`, that the oracle runs and checks are unchanged.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "description": "One path relative to `checkout/`.",
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "test_requirements": {
+      "description": "Requirement specifiers the original tests need, installed into the port environment.",
+      "type": "array",
+      "items": {
+        "description": "One requirement specifier, such as \"pytest\".",
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "import_names": {
+      "description": "Top-level import names the original package provides.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "description": "One dotted Python import name.",
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+      }
+    }
+  }
+}

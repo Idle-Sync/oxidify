@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Checkpoints",
+  "description": "<port>/state/checkpoints.json: every step completed on this port, oldest first.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format_version", "checkpoints"],
+  "properties": {
+    "format_version": {
+      "description": "Version of this file's format. Readers refuse any value other than 1.",
+      "const": 1
+    },
+    "checkpoints": {
+      "description": "Completed steps in the order they finished.",
+      "type": "array",
+      "items": {
+        "description": "One completed step.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["step", "completed_at"],
+        "properties": {
+          "step": {
+            "description": "Name of the step, such as \"start\" or \"prepare_environment\".",
+            "type": "string",
+            "minLength": 1
+          },
+          "completed_at": {
+            "description": "When the step finished, ISO 8601 in UTC.",
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}
