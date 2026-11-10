@@ -4,13 +4,25 @@ A Claude Code plugin that ports a pure-Python library to a behaviour-identical, 
 
 For Python library maintainers and developers who want a faster package without changing its behaviour.
 
-See prd.md.
-
 ## Prerequisites
 
 - `cargo` (Rust toolchain)
 - `uv`
 - `maturin` (`uv tool install maturin`)
+
+At session start the plugin names any of these that is missing and how to install it.
+
+## Install
+
+Inside Claude Code:
+
+```
+/plugin marketplace add Idle-Sync/oxidify
+/plugin install oxidify@idle-sync
+```
+
+To work on the plugin itself, clone this repository and start Claude Code with
+`claude --plugin-dir <path to the clone>`.
 
 ## Commands
 

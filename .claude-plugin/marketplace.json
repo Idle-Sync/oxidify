@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "idle-sync",
+  "description": "Oxidify: port Python libraries to Rust-backed packages, checked against the original tests.",
+  "owner": {
+    "name": "Idle-Sync",
+    "url": "https://github.com/Idle-Sync"
+  },
+  "plugins": [
+    {
+      "name": "oxidify",
+      "source": "./"
+    }
+  ]
+}
