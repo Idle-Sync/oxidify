@@ -19,7 +19,15 @@ LONE_SURROGATE = "\ud800"
 
 
 @pytest.fixture
-def load_fixture_module(monkeypatch: pytest.MonkeyPatch):
+def hypothesis_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Keeps in-process Hypothesis runs from writing `.hypothesis/` into the working folder."""
+    storage = tmp_path / "hypothesis_storage"
+    monkeypatch.setenv("HYPOTHESIS_STORAGE_DIRECTORY", str(storage))
+    return storage
+
+
+@pytest.fixture
+def load_fixture_module(monkeypatch: pytest.MonkeyPatch, hypothesis_storage: Path):
     monkeypatch.syspath_prepend(str(DIFFERENTIAL_MODULES_FOLDER))
 
     def load(name: str) -> ModuleType:
@@ -92,6 +100,33 @@ def test_return_type_compared(load_fixture_module) -> None:
     [result] = compare_modules(original, rust_backed, ["add"], EXAMPLES_PER_CALL_PATH)
 
     assert result["mismatches"] == [{"shrunk_input": "0, 0", "original": "0", "rust_backed": "0.0"}]
+
+
+def test_runs_are_derandomised(hypothesis_storage: Path) -> None:
+    inputs_seen = []
+
+    def remember(text: str) -> str:
+        inputs_seen.append(text)
+        return text
+
+    module = ModuleType("remembering")
+    module.__dict__["remember"] = remember
+
+    compare_modules(module, module, ["remember"], 20)
+    first_run = list(inputs_seen)
+    inputs_seen.clear()
+    compare_modules(module, module, ["remember"], 20)
+
+    assert inputs_seen == first_run
+
+
+def test_no_example_database_is_written(load_fixture_module, hypothesis_storage: Path) -> None:
+    original = load_fixture_module("underscore_original")
+    rust_backed = load_fixture_module("underscore_rust_backed")
+
+    compare_modules(original, rust_backed, ["shout"], EXAMPLES_PER_CALL_PATH)
+
+    assert not (hypothesis_storage / "examples").exists()
 
 
 @pytest.mark.parametrize(
