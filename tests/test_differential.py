@@ -9,8 +9,8 @@ from types import ModuleType
 import pytest
 
 from oxidify import port_folder
-from oxidify.python_adapter.differential import run_differential
-from oxidify.python_adapter.differential_script import compare_modules
+from oxidify.python_adapter.differential import DifferentialRunFailed, run_differential
+from oxidify.python_adapter.differential_script import compare_modules, public_names_of
 
 DIFFERENTIAL_MODULES_FOLDER = Path(__file__).parent / "fixtures" / "differential_modules"
 TINY_PACKAGE_RS_FOLDER = Path(__file__).parent / "fixtures" / "tiny_package_rs"
@@ -55,7 +55,8 @@ def results_by_call_path(results: list[dict]) -> dict[str, dict]:
 def test_matching_modules_report_inputs_tried(load_fixture_module) -> None:
     original = load_fixture_module("matching_original")
     rust_backed = load_fixture_module("matching_rust_backed")
-    public_names = ["shout", "add", "size"]
+    # append_zero changes its argument, so each side must be called on its own copy.
+    public_names = ["shout", "add", "size", "append_zero"]
 
     results = compare_modules(original, rust_backed, public_names, EXAMPLES_PER_CALL_PATH)
 
@@ -63,6 +64,7 @@ def test_matching_modules_report_inputs_tried(load_fixture_module) -> None:
         "matching_original.shout",
         "matching_original.add",
         "matching_original.size",
+        "matching_original.append_zero",
     ]
     for result in results:
         assert result["inputs_tried"] >= EXAMPLES_PER_CALL_PATH
@@ -81,6 +83,15 @@ def test_mismatch_is_shrunk(load_fixture_module) -> None:
     assert result["mismatches"] == [
         {"shrunk_input": repr("_"), "original": repr("_"), "rust_backed": repr("_!")}
     ]
+
+
+def test_return_type_compared(load_fixture_module) -> None:
+    original = load_fixture_module("types_original")
+    rust_backed = load_fixture_module("types_rust_backed")
+
+    [result] = compare_modules(original, rust_backed, ["add"], EXAMPLES_PER_CALL_PATH)
+
+    assert result["mismatches"] == [{"shrunk_input": "0, 0", "original": "0", "rust_backed": "0.0"}]
 
 
 @pytest.mark.parametrize(
@@ -117,6 +128,30 @@ def test_unannotated_call_path_is_listed(load_fixture_module) -> None:
     assert result["mismatches"] == []
 
 
+def test_variadic_and_keyword_only_call_paths_are_listed(load_fixture_module) -> None:
+    original = load_fixture_module("matching_original")
+    rust_backed = load_fixture_module("matching_rust_backed")
+
+    results = compare_modules(original, rust_backed, ["join_all", "label"], 5)
+
+    reasons = {result["call_path"]: result["skipped_reason"] for result in results}
+    assert reasons == {
+        "matching_original.join_all": "parameter 'words' is variadic",
+        "matching_original.label": "parameter 'loud' is keyword-only",
+    }
+    assert [result["inputs_tried"] for result in results] == [0, 0]
+
+
+def test_public_names_follow_all() -> None:
+    with_all = ModuleType("with_all")
+    with_all.__dict__.update({"__all__": ["listed"], "listed": len, "unlisted": len})
+    without_all = ModuleType("without_all")
+    without_all.__dict__.update({"public": len, "_private": len})
+
+    assert public_names_of(with_all) == ["listed"]
+    assert public_names_of(without_all) == ["public"]
+
+
 def test_data_names_are_not_call_paths(load_fixture_module) -> None:
     original = load_fixture_module("matching_original")
     rust_backed = load_fixture_module("matching_rust_backed")
@@ -130,12 +165,17 @@ def test_lone_surrogate_example_runs(load_fixture_module) -> None:
     original = load_fixture_module("surrogate_original")
     rust_backed = load_fixture_module("surrogate_rust_backed")
 
-    [result] = compare_modules(original, rust_backed, ["encode"], EXAMPLES_PER_CALL_PATH)
+    results = compare_modules(
+        original, rust_backed, ["encode", "encode_with_label"], EXAMPLES_PER_CALL_PATH
+    )
 
-    [mismatch] = result["mismatches"]
+    [encode, encode_with_label] = results
+    [mismatch] = encode["mismatches"]
     assert mismatch["shrunk_input"] == repr(LONE_SURROGATE)
     assert mismatch["original"] == repr(LONE_SURROGATE.encode("utf-8", "surrogatepass"))
     assert mismatch["rust_backed"].startswith("UnicodeEncodeError(")
+    [mismatch] = encode_with_label["mismatches"]
+    assert mismatch["shrunk_input"] == f"0, {LONE_SURROGATE!r}"
 
 
 def test_builtin_flag_recorded(load_fixture_module) -> None:
@@ -157,6 +197,8 @@ def test_both_modules_loaded_in_one_child_process(tiny_port_with_stand_in: Path)
     assert isinstance(report["process_id"], int)
     assert report["process_id"] != os.getpid()
     assert set(report["modules_loaded"]) == {"tiny_package", "tiny_package_rs"}
+    for module_file in report["modules_loaded"].values():
+        assert Path(module_file).is_relative_to(port_folder.venv_folder(port))
     assert results == report["call_paths"]
     by_call_path = results_by_call_path(results)
     assert set(by_call_path) == {
@@ -184,3 +226,9 @@ def test_checkout_clean_after_differential(tiny_port_with_stand_in: Path) -> Non
     )
     assert status.stdout == ""
     assert list(port.rglob(".hypothesis")) == []
+
+
+def test_failed_child_process_raises(tiny_port_with_environment: Path) -> None:
+    # Without the stand-in installed, the child cannot import tiny_package_rs.
+    with pytest.raises(DifferentialRunFailed, match="No module named 'tiny_package_rs'"):
+        run_differential(tiny_port_with_environment, 5)
