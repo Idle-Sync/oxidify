@@ -1,0 +1,23 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+      - id: ruff
+        name: ruff
+        entry: uv run ruff check
+        language: system
+        types: [python]
+      - id: shellcheck
+        name: shellcheck
+        entry: shellcheck
+        language: system
+        files: ^(hooks/.*\.sh|bin/.*|tests/shell/.*\.bats)$
+      - id: shfmt
+        name: shfmt
+        entry: shfmt -d
+        language: system
+        files: ^(hooks/.*\.sh|bin/.*|tests/shell/.*\.bats)$
