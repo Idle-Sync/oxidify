@@ -170,7 +170,10 @@ def test_rebinding_lines_go_to_the_module_that_holds_the_names(tiny_port_folder:
     commit = state.read_state(port_folder.port_json_path(port), "port")["commit"]
     export_pinned_commit(port, commit)
     original_words = port_folder.original_source_folder(port) / "tiny_package" / "words.py"
-    original_words.write_text(original_words.read_text().rstrip("\n"))
+    original_init = port_folder.original_source_folder(port) / "tiny_package" / "__init__.py"
+    # No trailing newline, so a module without Rust names must still be copied byte for byte.
+    for original_file in [original_words, original_init]:
+        original_file.write_text(original_file.read_text().rstrip("\n"))
     coverage_map = state.new_coverage_map(
         {"tiny_package": ["count_words"], "tiny_package.words": ["shout", "split_after_vowels"]}
     )
@@ -186,7 +189,6 @@ def test_rebinding_lines_go_to_the_module_that_holds_the_names(tiny_port_folder:
         + "\nfrom tiny_package_rs._rust import shout\n"
         + "from tiny_package_rs._rust import split_after_vowels\n"
     )
-    original_init = port_folder.original_source_folder(port) / "tiny_package" / "__init__.py"
     assert (copy / "__init__.py").read_text() == original_init.read_text()
 
 
