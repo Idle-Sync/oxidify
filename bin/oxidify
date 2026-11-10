@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Runs `python -m oxidify` from the plugin's uv project. The environment lives in
+# CLAUDE_PLUGIN_DATA because the plugin root is replaced on every update.
+set -euo pipefail
+
+if [ -z "${CLAUDE_PLUGIN_DATA:-}" ]; then
+	echo "oxidify: CLAUDE_PLUGIN_DATA is not set; run this inside a Claude Code session with the plugin loaded." >&2
+	exit 1
+fi
+
+plugin_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export UV_PROJECT_ENVIRONMENT="$CLAUDE_PLUGIN_DATA/venv"
+
+exec uv run --project "$plugin_root" python -m oxidify "$@"

@@ -1,0 +1,10 @@
+{
+  "name": "oxidify",
+  "description": "Ports Python libraries to Rust-backed packages and checks the result against the original tests.",
+  "author": {
+    "name": "Sayantan Ghosh",
+    "url": "https://idlesync.in"
+  },
+  "repository": "https://github.com/Idle-Sync/oxidify",
+  "license": "MIT"
+}
