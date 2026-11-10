@@ -104,34 +104,28 @@ run_hook() {
 	[ "$(wc -l <"$CLAUDE_ENV_FILE")" -eq 2 ]
 }
 
-@test "reports unset CLAUDE_PLUGIN_DATA" {
+@test "unset CLAUDE_PLUGIN_DATA: writes nothing and says nothing" {
 	with_tools cargo uv maturin
 	unset CLAUDE_PLUGIN_DATA
 	run_hook
 	[ "$status" -eq 0 ]
 	[ ! -e "$CLAUDE_ENV_FILE" ]
-	message="$(jq -r '.systemMessage' <<<"$output")"
-	[[ "$message" == *"oxidify command cannot find its data folder"* ]]
-	[[ "$message" == *"CLAUDE_PLUGIN_DATA is not set"* ]]
-	[[ "$message" != *"CLAUDE_ENV_FILE"* ]]
+	[ -z "$output" ]
 }
 
-@test "reports unset CLAUDE_ENV_FILE" {
+@test "unset CLAUDE_ENV_FILE: says nothing" {
 	with_tools cargo uv maturin
 	unset CLAUDE_ENV_FILE
 	run_hook
 	[ "$status" -eq 0 ]
 	[ ! -e "$BATS_TEST_TMPDIR/env_file" ]
-	message="$(jq -r '.systemMessage' <<<"$output")"
-	[[ "$message" == *"oxidify command cannot find its data folder"* ]]
-	[[ "$message" == *"CLAUDE_ENV_FILE is not set"* ]]
+	[ -z "$output" ]
 }
 
-@test "reports an env file it cannot write" {
+@test "env file it cannot write: says nothing on stdout" {
 	with_tools cargo uv maturin
 	export CLAUDE_ENV_FILE="$BATS_TEST_TMPDIR/no_such_folder/env_file"
 	run_hook
 	[ "$status" -eq 0 ]
-	message="$(jq -r '.systemMessage' <<<"$output")"
-	[[ "$message" == *"could not write to CLAUDE_ENV_FILE"* ]]
+	[ -z "$output" ]
 }
