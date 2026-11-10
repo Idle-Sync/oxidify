@@ -26,7 +26,8 @@ oxidify oracle <port> [--examples <inputs per call path>]
 ```
 
 - `start` clones the repository at the commit into `<port>/checkout/`, copies the licence files and
-  builds the port's environment in `<port>/.venv/`. `--test-path` defaults to `tests`.
+  builds the port's environment in `<port>/.venv/`. `--test-path` defaults to `tests`. A port
+  folder that already holds files is refused and left as it is.
 - `analyse` writes the files under `<port>/analysis/` and the coverage map.
 - `mark-swapped` marks public names of one module as implemented in Rust.
 - `build` copies the maturin project in `--rust-project` (`Cargo.toml`, `pyproject.toml`, `src/`;

@@ -36,7 +36,14 @@ def run_logged_step(port: Path, step: str, action: Callable[[], bool]) -> int:
     """Run `action`, log the step, and record a checkpoint when it passed.
 
     `action` returns False for a step that ran but did not pass; it raises for one that broke.
+    A folder without `port.json` is refused before anything is written, so a mistyped path
+    leaves no folder behind.
     """
+    if not paths.port_json_path(port).is_file():
+        print(
+            f"oxidify: {step} failed: {port} holds no port.json; run start first", file=sys.stderr
+        )
+        return 1
     started_at = now()
     try:
         passed = action()
@@ -76,12 +83,16 @@ def start_command(arguments: argparse.Namespace) -> int:
             arguments.test_requirement,
             arguments.test_command,
         )
+    except Exception as error:
+        # start_port refuses a non-empty folder untouched and undoes its own failures.
+        print(f"oxidify: start failed: {error}", file=sys.stderr)
+        return 1
+    try:
         adapter_for(port).prepare_environment(port)
     except Exception as error:
         print(f"oxidify: start failed: {error}", file=sys.stderr)
-        # start_port removes what it created itself; this covers a failure after it returned.
-        if port.exists():
-            remove_port_folder(port, existed_before, first_created)
+        # start_port accepted the folder, so it was missing or empty and all it holds is ours.
+        remove_port_folder(port, existed_before, first_created)
         return 1
     return 0
 
@@ -116,15 +127,25 @@ def copy_rust_project(project: Path, rust_backed: Path) -> None:
             raise ValueError(f"{project} is not a maturin project: it has no {file_name}")
     # Deleted first so a source file removed from the project is not left behind.
     shutil.rmtree(rust_backed / "src", ignore_errors=True)
-    shutil.copytree(
-        project, rust_backed, ignore=shutil.ignore_patterns("target"), dirs_exist_ok=True
-    )
+    shutil.copytree(project, rust_backed, ignore=skip_top_level_target(project), dirs_exist_ok=True)
+
+
+def skip_top_level_target(project: Path) -> Callable[[str, list[str]], set[str]]:
+    """An `ignore` for `copytree` that skips cargo's `target/` in the project root only."""
+
+    def ignore(folder: str, names: list[str]) -> set[str]:
+        if Path(folder) == project and "target" in names:
+            return {"target"}
+        return set()
+
+    return ignore
 
 
 def build_command(arguments: argparse.Namespace) -> int:
     port = arguments.port
 
     def build() -> bool:
+        adapter = adapter_for(port)
         rust_backed = paths.rust_backed_folder(port)
         if arguments.rust_project is not None:
             copy_rust_project(arguments.rust_project, rust_backed)
@@ -133,7 +154,7 @@ def build_command(arguments: argparse.Namespace) -> int:
                 f"{rust_backed} holds no pyproject.toml: pass --rust-project <folder> "
                 f"to copy a maturin project there"
             )
-        adapter_for(port).build_bridge(port)
+        adapter.build_bridge(port)
         return True
 
     return run_logged_step(port, "build_bridge", build)
@@ -152,6 +173,7 @@ def print_oracle_summary(report: dict[str, Any]) -> None:
         f"tests collected: original={rust_backed_collected + len(missing)} "
         f"rust_backed={rust_backed_collected} missing={len(missing)}"
     )
+    print("  original is derived: rust_backed plus missing; oracle.json holds no count")
     for test_id in missing:
         print(f"  missing: {test_id}")
     print(f"checkout unchanged: {'yes' if tests['test_folder_diff_empty'] else 'no'}")
@@ -174,6 +196,8 @@ def print_oracle_summary(report: dict[str, Any]) -> None:
         print(f"marked rust but resolves to Python: {name}")
     for entry in fallback["left_in_python"]:
         print(f"left in Python: {entry['name']} ({entry['reason']})")
+    for name in fallback["python_names_without_reason"]:
+        print(f"left in Python without a reason: {name}")
     print(f"oracle {'passed' if report['passed'] else 'failed'}")
 
 

@@ -92,6 +92,61 @@ def test_failed_environment_removes_port_folder(
     assert port_folder.port_json_path(port).is_file()
 
 
+def test_start_leaves_a_non_empty_port_folder_alone(
+    tmp_path: Path, licensed_repository: Path, adapter_in_use: RecordingAdapter
+) -> None:
+    port = tmp_path / "ports" / "tiny"
+    (port / "rust_backed").mkdir(parents=True)
+    (port / "port.json").write_text("{}\n")
+    (port / "rust_backed" / "lib.rs").write_text("// kept\n")
+
+    exit_code = main(["start", str(licensed_repository), "HEAD", str(port), "--test-path", "tests"])
+
+    assert exit_code != 0
+    assert (port / "port.json").read_text() == "{}\n"
+    assert (port / "rust_backed" / "lib.rs").read_text() == "// kept\n"
+    assert adapter_in_use.calls == []
+
+
+def test_failed_environment_in_an_empty_port_folder_keeps_the_folder(
+    tmp_path: Path, licensed_repository: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    port = tmp_path / "ports" / "tiny"
+    port.mkdir(parents=True)
+    failing = RecordingAdapter(failing=("prepare_environment",))
+    monkeypatch.setattr(command_line, "load_adapter", lambda name, version: failing)
+
+    assert main(["start", str(licensed_repository), "HEAD", str(port), "--test-path", "tests"]) != 0
+    assert port.is_dir()
+    assert list(port.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["analyse"],
+        ["mark-swapped", "tiny_package", "alpha"],
+        ["build"],
+        ["build", "--rust-project", str(HAND_SWAP_PROJECT)],
+        ["oracle"],
+    ],
+)
+def test_step_on_a_missing_port_folder_creates_nothing(
+    tmp_path: Path,
+    adapter_in_use: RecordingAdapter,
+    capsys: pytest.CaptureFixture[str],
+    arguments: list[str],
+) -> None:
+    port = tmp_path / "no_such_port"
+
+    exit_code = main([arguments[0], str(port), *arguments[1:]])
+
+    assert exit_code != 0
+    assert not port.exists()
+    assert "port.json" in capsys.readouterr().err
+    assert adapter_in_use.calls == []
+
+
 def test_each_step_logs_one_entry_and_one_checkpoint(
     tiny_port_folder: Path, adapter_in_use: RecordingAdapter
 ) -> None:
@@ -156,6 +211,8 @@ def test_build_copies_the_rust_project(
     (project / "src" / "lib.rs").write_text("// new\n")
     (project / "target").mkdir()
     (project / "target" / "debug_output").write_text("not copied\n")
+    (project / "src" / "target").mkdir()
+    (project / "src" / "target" / "mod.rs").write_text("// a module named target\n")
     rust_backed = port_folder.rust_backed_folder(tiny_port_folder)
     (rust_backed / "src").mkdir(parents=True)
     (rust_backed / "src" / "stale.rs").write_text("// stale\n")
@@ -168,6 +225,7 @@ def test_build_copies_the_rust_project(
     assert (rust_backed / "Cargo.toml").read_text() == "[package]\n"
     assert (rust_backed / "pyproject.toml").read_text() == "[project]\n"
     assert (rust_backed / "src" / "lib.rs").read_text() == "// new\n"
+    assert (rust_backed / "src" / "target" / "mod.rs").read_text() == "// a module named target\n"
     assert not (rust_backed / "src" / "stale.rs").exists()
     assert not (rust_backed / "target" / "debug_output").exists()
     assert (rust_backed / "target" / "kept").read_text() == "kept\n"
@@ -247,7 +305,7 @@ def oracle_report(passed: bool) -> dict[str, Any]:
         ],
         "fallback": {
             "rust_names_resolving_to_python": ["inflection.underscore"],
-            "python_names_without_reason": [],
+            "python_names_without_reason": ["inflection.singularize"],
             "left_in_python": [{"name": "inflection.pluralize", "reason": "uses regex"}],
         },
         "passed": passed,
@@ -270,6 +328,7 @@ def test_oracle_summary_and_exit_code(
     assert (exit_code == 0) == passed
     assert "original tests: passed=38 failed=0 errors=0 skipped=1" in lines
     assert "tests collected: original=40 rust_backed=39 missing=1" in lines
+    assert "  original is derived: rust_backed plus missing; oracle.json holds no count" in lines
     assert "  missing: test_inflection.py::test_lost" in lines
     assert f"checkout unchanged: {'yes' if passed else 'no'}" in lines
     assert "inflection.dasherize: inputs tried=200 mismatches=0" in lines
@@ -278,5 +337,6 @@ def test_oracle_summary_and_exit_code(
     )
     assert "marked rust but resolves to Python: inflection.underscore" in lines
     assert "left in Python: inflection.pluralize (uses regex)" in lines
+    assert "left in Python without a reason: inflection.singularize" in lines
     entry = task_log_entries(tiny_port_folder)[0]
     assert entry["outcome"] == ("passed" if passed else "failed")
