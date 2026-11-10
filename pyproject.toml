@@ -1,0 +1,46 @@
+[project]
+name = "oxidify"
+version = "0.1.0"
+description = "Claude Code plugin helpers that port a Python package to Rust behind PyO3, checked by an oracle."
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+requires-python = ">=3.14"
+dependencies = [
+    "jsonschema",
+]
+
+[dependency-groups]
+dev = [
+    "coverage",
+    "grimp",
+    "hypothesis",
+    "maturin",
+    "pre-commit",
+    "pyright",
+    "pytest",
+    "ruff",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["tests/fixtures"]
+markers = [
+    "end_to_end: clones the pinned inflection commit from GitHub and builds a real port environment",
+]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.pyright]
+include = ["src", "tests"]
+exclude = ["tests/fixtures"]
+pythonVersion = "3.14"
+typeCheckingMode = "standard"
