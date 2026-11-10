@@ -9,6 +9,7 @@ import copy
 import importlib
 import inspect
 import json
+import math
 import os
 import sys
 import types
@@ -18,6 +19,7 @@ from typing import Any
 
 from hypothesis import Verbosity, given, settings
 from hypothesis import strategies as st
+from hypothesis.errors import FailedHealthCheck, Flaky, ResolutionFailed
 
 # Text strategies leave out surrogates, and a lone one is where a Rust `&str` and a Python
 # `str` part ways, so every `str` parameter also gets this input.
@@ -40,11 +42,48 @@ def call_and_describe(callable_object: Any, arguments: tuple[Any, ...]) -> tuple
     return ("returned", type(value), value), repr(value)
 
 
+def values_agree(original_value: Any, rust_backed_value: Any) -> bool:
+    """`==`, except that two NaNs agree and objects without `__eq__` compare their attributes."""
+    if type(original_value) is not type(rust_backed_value):
+        return False
+    if isinstance(original_value, float) and math.isnan(original_value):
+        return math.isnan(rust_backed_value)
+    if isinstance(original_value, (tuple, list)):
+        if len(original_value) != len(rust_backed_value):
+            return False
+        for original_item, rust_backed_item in zip(original_value, rust_backed_value, strict=True):
+            if not values_agree(original_item, rust_backed_item):
+                return False
+        return True
+    if isinstance(original_value, dict):
+        if original_value.keys() != rust_backed_value.keys():
+            return False
+        for key in original_value:
+            if not values_agree(original_value[key], rust_backed_value[key]):
+                return False
+        return True
+    # The default `__eq__` is identity, which two separately built results never share.
+    value_type = type(original_value)
+    if (
+        value_type.__module__ != "builtins"
+        and value_type.__eq__ is object.__eq__
+        and hasattr(original_value, "__dict__")
+    ):
+        return values_agree(vars(original_value), vars(rust_backed_value))
+    return original_value == rust_backed_value
+
+
 def mismatch_for(original: Any, rust_backed: Any, arguments: tuple[Any, ...]) -> dict | None:
     """The mismatch entry for one input, or None when both sides agree on it."""
     original_outcome, original_repr = call_and_describe(original, arguments)
     rust_backed_outcome, rust_backed_repr = call_and_describe(rust_backed, arguments)
-    if original_outcome == rust_backed_outcome:
+    original_kind, original_type, original_value = original_outcome
+    rust_backed_kind, rust_backed_type, rust_backed_value = rust_backed_outcome
+    if (
+        original_kind == rust_backed_kind
+        and original_type is rust_backed_type
+        and values_agree(original_value, rust_backed_value)
+    ):
         return None
     return {
         "shrunk_input": ", ".join(repr(argument) for argument in arguments),
@@ -55,8 +94,12 @@ def mismatch_for(original: Any, rust_backed: Any, arguments: tuple[Any, ...]) ->
 
 def find_mismatch(
     original: Any, rust_backed: Any, arguments_strategy: Any, max_examples: int
-) -> tuple[int, dict | None]:
-    """Run Hypothesis on the arguments; return the inputs tried and the shrunk mismatch, if any."""
+) -> tuple[int, dict | None, str | None]:
+    """Run Hypothesis on the arguments.
+
+    Returns the inputs tried, the shrunk mismatch if any, and why Hypothesis could not finish
+    the run if it could not.
+    """
     inputs_tried = 0
     last_mismatch = None
 
@@ -81,8 +124,15 @@ def find_mismatch(
         compare()
     except CallPathsDiffer:
         # Hypothesis replays the minimal failing input last, so last_mismatch holds it.
-        return inputs_tried, last_mismatch
-    return inputs_tried, None
+        return inputs_tried, last_mismatch, None
+    except (ResolutionFailed, FailedHealthCheck, Flaky) as error:
+        first_line = str(error).splitlines()[0]
+        return (
+            inputs_tried,
+            None,
+            f"Hypothesis could not run it: {type(error).__name__}: {first_line}",
+        )
+    return inputs_tried, None, None
 
 
 def reason_not_compared(signature: inspect.Signature) -> str | None:
@@ -118,7 +168,13 @@ def compare_call_path(
         "rust_backed_is_builtin": isinstance(rust_backed, types.BuiltinFunctionType),
         "mismatches": [],
     }
-    signature = inspect.signature(original, eval_str=True)
+    try:
+        signature = inspect.signature(original, eval_str=True)
+    except (NameError, ValueError) as error:
+        # NameError: an annotation only imported under TYPE_CHECKING. ValueError: a built-in
+        # without a signature.
+        result["skipped_reason"] = f"signature cannot be read: {error}"
+        return result
     skipped_reason = reason_not_compared(signature)
     if skipped_reason is not None:
         result["skipped_reason"] = skipped_reason
@@ -131,11 +187,30 @@ def compare_call_path(
     if has_str_parameter:
         runs.append((arguments_strategy(signature, True), 1))
     for strategy, max_examples in runs:
-        inputs_tried, mismatch = find_mismatch(original, rust_backed, strategy, max_examples)
+        inputs_tried, mismatch, skipped_reason = find_mismatch(
+            original, rust_backed, strategy, max_examples
+        )
         result["inputs_tried"] += inputs_tried
         if mismatch is not None:
             result["mismatches"].append(mismatch)
+        if skipped_reason is not None:
+            result["skipped_reason"] = skipped_reason
+            return result
     return result
+
+
+def missing_from_rust_backed(
+    call_path: str, rust_backed_module: ModuleType, name: str
+) -> dict[str, Any]:
+    """A name the Rust-backed module lacks is a mismatch on every input, so none are tried."""
+    error = AttributeError(f"module {rust_backed_module.__name__!r} has no attribute {name!r}")
+    return {
+        "call_path": call_path,
+        "inputs_tried": 0,
+        "skipped_reason": None,
+        "rust_backed_is_builtin": False,
+        "mismatches": [{"shrunk_input": "", "original": call_path, "rust_backed": repr(error)}],
+    }
 
 
 def compare_modules(
@@ -150,8 +225,11 @@ def compare_modules(
         original = getattr(original_module, name)
         if not callable(original):
             continue
-        rust_backed = getattr(rust_backed_module, name)
         call_path = f"{original_module.__name__}.{name}"
+        if not hasattr(rust_backed_module, name):
+            results.append(missing_from_rust_backed(call_path, rust_backed_module, name))
+            continue
+        rust_backed = getattr(rust_backed_module, name)
         results.append(compare_call_path(call_path, original, rust_backed, examples_per_call_path))
     return results
 

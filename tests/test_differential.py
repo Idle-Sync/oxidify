@@ -129,6 +129,86 @@ def test_no_example_database_is_written(load_fixture_module, hypothesis_storage:
     assert not (hypothesis_storage / "examples").exists()
 
 
+def test_nan_results_agree(load_fixture_module) -> None:
+    original = load_fixture_module("floats_original")
+    rust_backed = load_fixture_module("floats_rust_backed")
+
+    results = compare_modules(
+        original, rust_backed, ["half", "halves_in_containers"], EXAMPLES_PER_CALL_PATH
+    )
+
+    for result in results:
+        assert result["inputs_tried"] >= EXAMPLES_PER_CALL_PATH
+        assert result["mismatches"] == []
+
+
+def test_objects_without_eq_compared_by_attributes(load_fixture_module) -> None:
+    original = load_fixture_module("points_original")
+    rust_backed = load_fixture_module("points_rust_backed")
+
+    [point_at, point_near] = compare_modules(
+        original, rust_backed, ["point_at", "point_near"], EXAMPLES_PER_CALL_PATH
+    )
+
+    assert point_at["mismatches"] == []
+    [mismatch] = point_near["mismatches"]
+    assert mismatch["shrunk_input"] == "0"
+
+
+def test_call_paths_that_cannot_be_compared_are_listed(load_fixture_module) -> None:
+    original = load_fixture_module("uncomparable_original")
+    rust_backed = load_fixture_module("uncomparable_rust_backed")
+    public_names = [
+        "use_handle",
+        "scale",
+        "largest",
+        "use_rejected",
+        "first_call_differs",
+        "double",
+    ]
+
+    results = compare_modules(original, rust_backed, public_names, EXAMPLES_PER_CALL_PATH)
+
+    by_call_path = results_by_call_path(results)
+    reasons = {}
+    for name in public_names:
+        reasons[name] = by_call_path[f"uncomparable_original.{name}"]["skipped_reason"]
+    assert reasons["use_handle"].startswith("Hypothesis could not run it: ResolutionFailed: ")
+    assert reasons["scale"] == "signature cannot be read: name 'Decimal' is not defined"
+    assert reasons["largest"] == (
+        "signature cannot be read: no signature found for builtin <built-in function max>"
+    )
+    assert reasons["use_rejected"].startswith("Hypothesis could not run it: FailedHealthCheck: ")
+    assert reasons["first_call_differs"].startswith("Hypothesis could not run it: Flaky")
+    assert reasons["double"] is None
+    assert by_call_path["uncomparable_original.double"]["inputs_tried"] >= EXAMPLES_PER_CALL_PATH
+    for name in ["use_handle", "scale", "largest"]:
+        assert by_call_path[f"uncomparable_original.{name}"]["inputs_tried"] == 0
+    for result in results:
+        assert result["mismatches"] == []
+
+
+def test_name_missing_from_rust_backed_is_a_mismatch(load_fixture_module) -> None:
+    original = load_fixture_module("uncomparable_original")
+    rust_backed = load_fixture_module("uncomparable_rust_backed")
+
+    [result] = compare_modules(original, rust_backed, ["missing_from_rust_backed"], 5)
+
+    assert result["inputs_tried"] == 0
+    assert result["skipped_reason"] is None
+    assert result["mismatches"] == [
+        {
+            "shrunk_input": "",
+            "original": "uncomparable_original.missing_from_rust_backed",
+            "rust_backed": repr(
+                AttributeError(
+                    "module 'uncomparable_rust_backed' has no attribute 'missing_from_rust_backed'"
+                )
+            ),
+        }
+    ]
+
+
 @pytest.mark.parametrize(
     ("rust_backed_name", "mismatch_count"),
     [("exceptions_other_type", 1), ("exceptions_other_message", 1), ("exceptions_same", 0)],
