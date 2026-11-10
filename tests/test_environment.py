@@ -5,7 +5,18 @@ from pathlib import Path
 import pytest
 
 from oxidify import port_folder, state
+from oxidify.adapter import load_adapter
 from oxidify.python_adapter.environment import EnvironmentSetupFailed, prepare_environment
+
+# Fixed identity and no signing, so the commit does not depend on the developer's git config.
+GIT_IDENTITY = [
+    "-c",
+    "user.name=Oxidify Tests",
+    "-c",
+    "user.email=tests@oxidify.invalid",
+    "-c",
+    "commit.gpgsign=false",
+]
 
 
 def run_in_port_environment(port: Path, code: str) -> str:
@@ -68,6 +79,8 @@ def test_checkout_clean_after_prepare(tiny_port_with_environment: Path) -> None:
 def test_export_follows_the_pinned_commit_not_the_checkout(tiny_port_folder: Path) -> None:
     checkout = port_folder.checkout_folder(tiny_port_folder)
     (checkout / "tiny_package" / "words.py").write_text("raise RuntimeError('edited checkout')\n")
+    commit = ["commit", "--quiet", "--all", "-m", "move HEAD off the pin"]
+    subprocess.run(["git", "-C", str(checkout), *GIT_IDENTITY, *commit], check=True)
 
     prepare_environment(tiny_port_folder)
 
@@ -94,6 +107,23 @@ def test_import_name_the_install_does_not_provide_fails(tiny_port_folder: Path) 
 
     with pytest.raises(EnvironmentSetupFailed, match="not_installed_anywhere"):
         prepare_environment(tiny_port_folder)
+
+
+def test_test_requirements_are_installed(tiny_port_folder: Path) -> None:
+    port_json_path = port_folder.port_json_path(tiny_port_folder)
+    port = state.read_state(port_json_path, "port")
+    port["test_requirements"] = ["pytest", "six"]
+    state.write_state(port_json_path, "port", port)
+
+    prepare_environment(tiny_port_folder)
+
+    run_in_port_environment(tiny_port_folder, "import six")
+
+
+def test_python_adapter_prepares_the_environment(tiny_port_folder: Path) -> None:
+    load_adapter("python", 1).prepare_environment(tiny_port_folder)
+
+    run_in_port_environment(tiny_port_folder, "import tiny_package")
 
 
 @pytest.mark.end_to_end

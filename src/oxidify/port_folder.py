@@ -1,6 +1,7 @@
 """Paths inside a port folder. Every step finds its files through these functions."""
 
 from pathlib import Path
+from typing import Literal
 
 
 def port_json_path(port: Path) -> Path:
@@ -99,8 +100,6 @@ def differential_report_path(port: Path) -> Path:
     return report_folder(port) / "differential.json"
 
 
-def original_tests_report_path(port: Path, against: str) -> Path:
-    """JUnit XML of the original tests run against "original" or "rust_backed"."""
-    if against not in ("original", "rust_backed"):
-        raise ValueError(f"against must be 'original' or 'rust_backed', not {against!r}")
+def original_tests_report_path(port: Path, against: Literal["original", "rust_backed"]) -> Path:
+    """JUnit XML of the original tests run against the original or the Rust-backed package."""
     return report_folder(port) / f"original_tests_{against}.xml"
