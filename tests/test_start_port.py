@@ -238,6 +238,7 @@ def test_password_in_url_is_not_in_licence_refusal(tiny_repository: Path, tmp_pa
     [
         ("ssh://git:pa55word@example.invalid/x.git", "ssh://git@example.invalid/x.git"),
         ("ssh://git@example.invalid/x.git", "ssh://git@example.invalid/x.git"),
+        ("ssh://example.invalid/x.git", "ssh://example.invalid/x.git"),
         ("https://t0ken@example.invalid/x.git", "https://example.invalid/x.git"),
         ("https://user:p%40ss@example.invalid/x.git", "https://example.invalid/x.git"),
         ("git@example.invalid:x.git", "git@example.invalid:x.git"),
