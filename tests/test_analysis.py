@@ -6,7 +6,12 @@ from typing import Any
 import pytest
 
 from oxidify import port_folder, state
-from oxidify.python_adapter.analysis import AnalysisFailed, analyse_source, scan_source
+from oxidify.python_adapter.analysis import (
+    AnalysisFailed,
+    analyse_source,
+    file_matches,
+    scan_source,
+)
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -15,7 +20,15 @@ def read_json(path: Path) -> dict[str, Any]:
 
 def checkout_status(port: Path) -> str:
     result = subprocess.run(
-        ["git", "-C", str(port_folder.checkout_folder(port)), "status", "--porcelain"],
+        [
+            "git",
+            "-C",
+            str(port_folder.checkout_folder(port)),
+            "status",
+            "--porcelain",
+            # Ignored files too: a cache folder with its own .gitignore would otherwise hide.
+            "--ignored",
+        ],
         capture_output=True,
         text=True,
         check=True,
@@ -126,7 +139,10 @@ def test_regex_features_are_flagged() -> None:
             "re.compile(r'(a)\\1')",
             "re.compile(r'abc\\Z')",
             "re.compile(r'(?i)abc$')",
-            "re.compile(r'\\bword\\w+')",
+            "re.compile(r'\\bword')",
+            "re.compile(r'\\w+')",
+            "re.compile(r'(?P<name>a)(?P=name)')",
+            "re.compile(r'(?x) a b')",
             "re.compile(r'a b # note', re.VERBOSE)",
             "re.compile(r'a\\$')",
             "re.sub(rule, '', word)",
@@ -142,6 +158,9 @@ def test_regex_features_are_flagged() -> None:
         ["end_of_string_Z"],
         ["inline_ignore_case", "trailing_dollar"],
         ["word_class_or_boundary"],
+        ["word_class_or_boundary"],
+        ["backreference"],
+        ["verbose"],
         ["verbose"],
         [],
         ["built_at_runtime"],
@@ -163,6 +182,8 @@ def test_unsupported_constructs_are_found() -> None:
             "globals()['x'] = 1",
             "locals().update({})",
             "def fine(): return globals()['x']",
+            "class Holder:",
+            "    def __getattr__(self, name): return name",
         ]
     )
 
@@ -179,6 +200,12 @@ def test_unsupported_constructs_are_found() -> None:
         ("globals_write", 9),
         ("locals_write", 10),
     ]
+
+
+def test_coverage_file_matches_on_whole_path_parts() -> None:
+    assert file_matches("/site/tiny_package/words.py", "tiny_package/words.py")
+    assert file_matches("tiny_package/words.py", "tiny_package/words.py")
+    assert not file_matches("/site/other_tiny_package/words.py", "tiny_package/words.py")
 
 
 def test_coverage_map_initialised(analysed_tiny_port: Path) -> None:

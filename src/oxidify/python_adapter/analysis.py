@@ -110,6 +110,11 @@ def swap_order_groups(modules: list[str], edges: list[dict[str, str]]) -> list[d
     return groups
 
 
+def file_matches(measured_file: str, module_file: str) -> bool:
+    """Whether coverage.py's path for a file is the module's file, whatever folder it is under."""
+    return measured_file == module_file or measured_file.endswith("/" + module_file)
+
+
 def measure_coverage(
     port_folder: Path, import_names: list[str], modules: list[dict[str, str]]
 ) -> dict[str, float]:
@@ -151,8 +156,8 @@ def measure_coverage(
     percent_by_module = {}
     for module in modules:
         for file, percent in percent_by_file.items():
-            if file == module["file"] or file.endswith("/" + module["file"]):
-                percent_by_module[module["name"]] = round(percent, 2)
+            if file_matches(file, module["file"]):
+                percent_by_module[module["name"]] = percent
     for module in modules:
         if module["name"] not in percent_by_module:
             raise AnalysisFailed(f"coverage.py reported nothing for {module['name']}")
